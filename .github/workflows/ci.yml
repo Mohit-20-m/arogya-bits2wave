@@ -1,0 +1,96 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint, unit tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/requirements.txt
+      - name: Install
+        working-directory: services
+        run: |
+          pip install -r requirements.txt pytest==8.4.2 ruff==0.13.3
+          pip install --no-deps rapidocr-onnxruntime==1.2.3
+      - name: Lint (syntax errors, undefined names)
+        run: ruff check services --select E9,F --ignore F401,F841
+      - name: Unit tests (decision engine, quality gate, security, model contract)
+        working-directory: services
+        run: pytest -q tests
+
+  policies:
+    name: Access policies (OPA)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OPA
+        run: |
+          curl -sSfL -o opa https://openpolicyagent.org/downloads/v0.70.0/opa_linux_amd64_static
+          chmod +x opa
+      - name: Policy unit tests
+        run: ./opa test infra/opa/policies -v
+
+  training:
+    name: Training pipeline
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install linters
+        run: pip install ruff==0.13.3
+      - name: Lint (syntax errors, undefined names)
+        run: ruff check training --select E9,F --ignore F401,F841
+      - name: Byte-compile
+        run: python -m compileall -q training
+
+  artefacts:
+    name: Model metadata, notebook, compose, scripts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate model contract and card
+        run: |
+          python - <<'EOF'
+          import json, pathlib
+          root = pathlib.Path("models/v1.0.0")
+          contract = json.loads((root / "model_contract.json").read_text())
+          card = json.loads((root / "model_card.json").read_text())
+          need = {"model_version", "backbone", "files", "input", "decision", "ood_file"}
+          missing = need - contract.keys()
+          assert not missing, f"contract is missing {missing}"
+          assert contract["model_version"] == card["model_version"], "card and contract versions differ"
+          thr = contract["decision"]["thresholds"]["screening"]
+          assert 0 < thr < 1, "screening threshold out of range"
+          for p in root.rglob("*.json"):
+              json.loads(p.read_text())
+          print(f"model {contract['model_version']} ({contract['backbone']}), screening threshold {thr:.3f}: ok")
+          EOF
+      - name: Validate notebook
+        run: |
+          pip install nbformat==5.10.4
+          python -c "import nbformat, glob; [nbformat.validate(nbformat.read(p, as_version=4)) or print('valid:', p) for p in glob.glob('notebooks/*.ipynb')]"
+      - name: Validate docker compose file
+        run: docker compose config -q
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh ops/*.sh infra/vault/entrypoint.sh infra/postgres/backup.sh infra/postgres/initdb/*.sh
