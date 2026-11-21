@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+  - package-ecosystem: pip
+    directory: /services
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: build
+    open-pull-requests-limit: 5
+  - package-ecosystem: docker
+    directory: /services
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: build
