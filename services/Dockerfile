@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # One shared image for: api, worker (+beat), relay, inference, bootstrap.  Multi-arch (Apple Silicon / x86-64).
-FROM python:3.12-slim-bookworm AS base
+FROM python:3.15-slim-bookworm AS base
 
 ARG INSTALL_EXTRAS=true
 ENV PYTHONDONTWRITEBYTECODE=1 \
