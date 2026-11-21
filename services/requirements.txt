@@ -8,7 +8,7 @@ pydantic==2.13.5
 pydantic-settings==2.16.2
 httpx==0.28.1
 orjson==3.13.0
-SQLAlchemy[asyncio]==2.1.8
+SQLAlchemy[asyncio]==2.1.9
 asyncpg==0.32.0
 psycopg[binary]==3.3.8
 alembic==1.20.1
